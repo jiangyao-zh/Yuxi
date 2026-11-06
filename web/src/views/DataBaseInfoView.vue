@@ -222,6 +222,12 @@
           <KnowledgeEvaluationWorkspace v-if="kbId" :kb-id="kbId" :can-manage="canManageDatabase" />
         </div>
       </template>
+
+      <template #panel-test-tasks>
+        <div v-if="isMilvus && activeTab === 'test-tasks'" class="tab-panel">
+          <TestTaskWorkspace v-if="kbId" :kb-id="kbId" :can-manage="canManageDatabase" />
+        </div>
+      </template>
     </ExtensionDetailLayout>
 
     <FileDetailModal
@@ -438,6 +444,7 @@ import {
   FolderUp,
   Hash,
   LoaderCircle,
+  ListChecks,
   Network,
   Pencil,
   Search,
@@ -468,6 +475,9 @@ const KnowledgeGraphSection = createAsyncPanel(
 const MindMapSection = createAsyncPanel(() => import('@/components/MindMapSection.vue'))
 const KnowledgeEvaluationWorkspace = createAsyncPanel(
   () => import('@/components/evaluation/KnowledgeEvaluationWorkspace.vue')
+)
+const TestTaskWorkspace = createAsyncPanel(
+  () => import('@/components/knowledge/TestTaskWorkspace.vue')
 )
 
 const route = useRoute()
@@ -500,7 +510,8 @@ const tabs = computed(() => {
       { key: 'filetable', label: '文件管理', icon: FileText },
       { key: 'query', label: '检索测试', icon: Search, forceRender: true },
       { key: 'graph', label: '知识图谱', icon: Network },
-      { key: 'evaluation', label: '评估', icon: BarChart3 }
+      { key: 'evaluation', label: '评估', icon: BarChart3 },
+      { key: 'test-tasks', label: '试验任务', icon: ListChecks }
     ]
   }
 
@@ -510,7 +521,7 @@ const tabs = computed(() => {
 const visibleTabs = computed(() =>
   canManageDatabase.value
     ? tabs.value
-    : tabs.value.filter((tab) => ['filetable', 'query', 'graph'].includes(tab.key))
+    : tabs.value.filter((tab) => ['filetable', 'query', 'graph', 'test-tasks'].includes(tab.key))
 )
 const activeTab = ref('filetable')
 

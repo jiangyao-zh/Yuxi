@@ -384,6 +384,51 @@ async def test_current_schema_does_not_rewrite_workdir_data(monkeypatch):
     assert {"import", "rewrite", "verify", "cleanup"}.isdisjoint(calls)
 
 
+@pytest.mark.asyncio
+async def test_knowledge_schema_v2_upgrades_test_task_table(monkeypatch):
+    calls: list[str] = []
+
+    @asynccontextmanager
+    async def session_context():
+        yield _Session()
+
+    manager = SimpleNamespace(
+        initialize=lambda: calls.append("initialize"),
+        schema_migration_lock=lambda: _async_context(calls, "schema_lock"),
+        create_schema_version_table=lambda: _record(calls, "create_schema_version_table"),
+        get_schema_versions=lambda: _async_value(
+            {"business": storage_migration.BUSINESS_SCHEMA_VERSION, "knowledge": 2}
+        ),
+        record_schema_version=lambda domain, version: _record(calls, f"version:{domain}:{version}"),
+        upgrade_knowledge_schema_v2_to_v3=lambda: _record(calls, "upgrade_knowledge_v2_to_v3"),
+        get_async_session_context=session_context,
+        close=lambda: _record(calls, "close"),
+    )
+    monkeypatch.setattr(storage_migration, "pg_manager", manager)
+    monkeypatch.setattr(
+        storage_migration,
+        "read_v071_workdir_plan",
+        lambda _db: _async_value(V071WorkdirMigrationPlan(False, (), ())),
+    )
+    monkeypatch.setattr(storage_migration, "_legacy_skill_roots_exist", lambda: False)
+    monkeypatch.setattr(storage_migration, "_legacy_system_config_exists", lambda: False)
+    monkeypatch.setattr(storage_migration, "runtime_storage_requires_quiescence", lambda: False)
+    monkeypatch.setattr(
+        storage_migration,
+        "_converge_database_state",
+        lambda *, fail_nonterminal_runs: _record(calls, f"converge:{fail_nonterminal_runs}"),
+    )
+    monkeypatch.setattr(storage_migration, "migrate_shared_skills", lambda _db: _record(calls, "skills"))
+    monkeypatch.setattr(storage_migration, "mark_v071_skills_migrated", lambda: calls.append("mark_skills"))
+    monkeypatch.setattr(storage_migration, "migrate_runtime_storage_identity", lambda: calls.append("runtime_identity"))
+
+    await storage_migration.main()
+
+    assert "upgrade_knowledge_v2_to_v3" in calls
+    assert f"version:knowledge:{storage_migration.KNOWLEDGE_SCHEMA_VERSION}" in calls
+    assert "create_knowledge" not in calls
+
+
 def test_personal_workspace_skills_never_trigger_shared_skill_migration(monkeypatch, tmp_path):
     personal_skill = tmp_path / "user-data/shared/user-1/workspace/agents/skills/notes"
     personal_skill.mkdir(parents=True)

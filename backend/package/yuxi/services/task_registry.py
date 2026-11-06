@@ -68,6 +68,13 @@ _TASK_DEFINITIONS = {
             "run_knowledge_graph",
         ),
         TaskDefinition(
+            "test_task_extract",
+            "yuxi.services.test_task_service",
+            "run_test_task_extract",
+            success_function="finish_test_task_extract",
+            failure_function="fail_test_task_extract",
+        ),
+        TaskDefinition(
             "knowledge_virtual_folder_migration",
             "yuxi.services.knowledge_task_service",
             "run_virtual_folder_migration",

@@ -101,6 +101,8 @@ export const canPreviewParsed = (record) => {
   return PARSED_PREVIEW_STATUSES.has(record.status)
 }
 
+export const canExtractTestTask = (record) => canPreviewParsed(record)
+
 export const canPreviewOriginal = (record) => {
   if (!record || record.is_folder || record.file_type === 'url') return false
   if ('has_original_file' in record) return Boolean(record.has_original_file)

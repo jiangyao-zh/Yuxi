@@ -4,6 +4,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -314,3 +315,32 @@ class EvaluationRunItem(Base):
     retrieved_chunks = Column(JSON_VALUE)
     metrics = Column(JSON_VALUE)
     created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class TestTaskExtraction(Base):
+    """试验任务抽取与人工确认清单。"""
+
+    __tablename__ = "test_task_extractions"
+    __table_args__ = (
+        UniqueConstraint("extraction_id", name="uq_test_task_extractions_extraction_id"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'ready', 'confirmed', 'failed')",
+            name="ck_test_task_extractions_status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    extraction_id = Column(String(64), unique=True, nullable=False, index=True)
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="queued", index=True)
+    source_files = Column(JSON_VALUE, nullable=False, default=lambda: [])
+    model_spec = Column(String(512), nullable=False)
+    durable_task_id = Column(String(64), index=True)
+    error_message = Column(Text)
+    checklist = Column(JSON_VALUE, nullable=False, default=lambda: [])
+    confirmed_fields = Column(JSON_VALUE)
+    created_by = Column(String(64))
+    confirmed_by = Column(String(64))
+    confirmed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
