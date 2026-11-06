@@ -8,6 +8,7 @@ import uuid
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from yuxi.storage.postgres.manager import BUSINESS_SCHEMA_VERSION, KNOWLEDGE_SCHEMA_VERSION, PostgresManager
@@ -377,7 +378,50 @@ async def test_knowledge_v1_to_v2_adds_file_attempt_owner_idempotently() -> None
             "error_parsing",
             "service_interrupted: 旧执行实例中断，处理结果未知，请重试",
         )
-        assert KNOWLEDGE_SCHEMA_VERSION == 2
+        assert KNOWLEDGE_SCHEMA_VERSION == 3
+    finally:
+        await _drop_isolated_schema(schema, admin_engine, scoped_engine)
+
+
+async def test_knowledge_v2_to_v3_creates_test_task_table_and_rejects_unknown_status() -> None:
+    """试验任务表可重复升级，非法确认状态不能写入。"""
+    schema, admin_engine, scoped_engine, manager = await _create_isolated_manager("pytest_test_task_schema")
+    try:
+        await manager.create_knowledge_tables()
+        async with scoped_engine.begin() as connection:
+            await connection.execute(text("DROP TABLE IF EXISTS test_task_extractions"))
+
+        await manager.upgrade_knowledge_schema_v2_to_v3()
+        await manager.upgrade_knowledge_schema_v2_to_v3()
+
+        async with scoped_engine.begin() as connection:
+            await connection.execute(
+                text("INSERT INTO knowledge_bases (kb_id, name, kb_type) VALUES ('kb-tt', '试验', 'milvus')")
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO test_task_extractions (extraction_id, kb_id, status, model_spec) "
+                    "VALUES ('tt_0123456789abcdef', 'kb-tt', 'queued', 'chat/demo')"
+                )
+            )
+            stored = (
+                await connection.execute(
+                    text(
+                        "SELECT status, checklist FROM test_task_extractions "
+                        "WHERE extraction_id = 'tt_0123456789abcdef'"
+                    )
+                )
+            ).one()
+        assert tuple(stored)[0] == "queued"
+
+        with pytest.raises(IntegrityError):
+            async with scoped_engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "INSERT INTO test_task_extractions (extraction_id, kb_id, status, model_spec) "
+                        "VALUES ('tt_fedcba9876543210', 'kb-tt', 'bogus', 'chat/demo')"
+                    )
+                )
     finally:
         await _drop_isolated_schema(schema, admin_engine, scoped_engine)
 

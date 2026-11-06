@@ -58,7 +58,7 @@ Yuxi 只交付完整知识能力路径。API 始终注册 `external_kb`、`knowl
 
 - AgentRun：拥有 Conversation、Message、LangGraph interrupt、线程 FIFO 和 execution tree 语义，通过专用 Run/Attempt 表维护状态、输出与租约。
 - 用户定时 Agent：任务定义和 occurrence 独立持久化；worker 锁定到期任务后复用统一 AgentRun Request/Run 链路，排队与执行状态仍由 AgentRunRequest 和 AgentRun 拥有。
-- Durable Task：用于知识库解析、评估和图谱构建。API 只提交持久 `task_type + handler_version + payload`；`worker` 从 registry 惰性加载领域 Handler，并通过 Task 行的唯一 owner、heartbeat 和 lease 执行。知识文件中间态绑定 Task/attempt owner，失联 failure hook 与 Task 终态同事务收敛文件错误态；PG pending 行由启动与周期 publisher 补发。共享 ARQ worker 的执行槽由 Compose 配置，Durable Task 的 PG claim 上限为 4，不能占满 AgentRun 容量。
+- Durable Task：用于知识库解析、评估、图谱构建和试验任务抽取。API 只提交持久 `task_type + handler_version + payload`；`worker` 从 registry 惰性加载领域 Handler，并通过 Task 行的唯一 owner、heartbeat 和 lease 执行。知识文件中间态绑定 Task/attempt owner，失联 failure hook 与 Task 终态同事务收敛文件错误态；试验任务抽取的确认清单和失败原因也在同一终态事务中写入。PG pending 行由启动与周期 publisher 补发。共享 ARQ worker 的执行槽由 Compose 配置，Durable Task 的 PG claim 上限为 4，不能占满 AgentRun 容量。
 
 测试代码位于 `backend/test`，按 `unit`、`integration`、`e2e` 分层。新增或修改后端行为时，测试应放在最能覆盖真实风险的层级。
 

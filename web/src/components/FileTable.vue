@@ -253,6 +253,15 @@
             </a-button>
             <a-button
               type="link"
+              @click="handleBatchExtractTestTask"
+              :loading="extractingTestTask"
+              :disabled="!canBatchExtractTestTask"
+              :icon="h(ListChecks, { size: 16 })"
+            >
+              试验任务解析
+            </a-button>
+            <a-button
+              type="link"
               danger
               @click="handleBatchDelete"
               :loading="batchDeleting"
@@ -437,6 +446,17 @@
 
                   <!-- Reindex Action -->
                   <a-button
+                    v-if="!readonly && canExtractTestTask(row)"
+                    type="text"
+                    block
+                    @click="handleExtractTestTaskRow(row)"
+                    :disabled="lock"
+                  >
+                    <template #icon><component :is="h(ListChecks)" size="14" /></template>
+                    试验任务解析
+                  </a-button>
+
+                  <a-button
                     v-if="!readonly && canReindexFile(row)"
                     type="text"
                     block
@@ -472,16 +492,19 @@
 
 <script setup>
 import { ref, computed, h, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useDatabaseStore } from '@/stores/database'
 import { useConfigStore } from '@/stores/config'
 import OCRSelector from '@/components/OCRSelector.vue'
 import { message, Modal } from 'ant-design-vue'
 import { documentApi } from '@/apis/knowledge_api'
+import { testTaskApi } from '@/apis/test_task_api'
 import {
   FILE_ACTIONS,
   FILE_STATUS_FILTER_OPTIONS,
   canDeleteFile,
   canDownloadFile,
+  canExtractTestTask,
   canIndexFile,
   canOpenFileDetail,
   canParseFile,
@@ -514,6 +537,7 @@ import {
   FileText,
   Database,
   Filter,
+  ListChecks,
   MoreHorizontal,
   Pencil,
   Search,
@@ -521,6 +545,7 @@ import {
 } from '@lucide/vue'
 
 const store = useDatabaseStore()
+const router = useRouter()
 
 const emit = defineEmits(['mindmap', 'search'])
 
@@ -992,6 +1017,59 @@ const canBatchIndex = computed(() => {
     return !lock.value && canIndexFile(file)
   })
 })
+
+const extractingTestTask = ref(false)
+const canBatchExtractTestTask = computed(() => {
+  return selectedRowKeys.value.some((key) => {
+    const file = files.value.find((f) => f.file_id === key)
+    return !lock.value && canExtractTestTask(file)
+  })
+})
+
+const handleExtractTestTask = async (fileIds) => {
+  if (readonly.value || extractingTestTask.value) return
+  if (!store.database?.llm_model_spec) {
+    message.warning('请先在知识库设置中配置 LLM 模型')
+    return
+  }
+  extractingTestTask.value = true
+  try {
+    const record = await testTaskApi.create(store.kbId, fileIds)
+    if (record.status === 'failed') {
+      message.error(record.error_message || '无法发起试验任务解析')
+    } else {
+      message.success('已发起试验任务解析')
+    }
+    router.push({
+      name: 'ExtensionTestTaskChecklist',
+      params: { kbId: store.kbId, extractionId: record.extraction_id }
+    })
+  } catch (error) {
+    message.error(error.message || '无法发起试验任务解析，请确认文件已解析且知识库已配置 LLM 模型')
+  } finally {
+    extractingTestTask.value = false
+  }
+}
+
+const handleExtractTestTaskRow = (record) => {
+  closePopover(record.file_id)
+  handleExtractTestTask([record.file_id])
+}
+
+const handleBatchExtractTestTask = () => {
+  const validKeys = selectedRowKeys.value.filter((key) => {
+    const file = files.value.find((f) => f.file_id === key)
+    return canExtractTestTask(file)
+  })
+  if (validKeys.length === 0) {
+    message.warning('没有已解析、可抽取的文件')
+    return
+  }
+  if (validKeys.length < selectedRowKeys.value.length) {
+    message.info(`已跳过 ${selectedRowKeys.value.length - validKeys.length} 个尚未解析的文件`)
+  }
+  handleExtractTestTask(validKeys)
+}
 
 const handleRefresh = async () => {
   await Promise.all([

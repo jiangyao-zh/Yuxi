@@ -123,6 +123,16 @@ const router = createRouter({
               }
             },
             {
+              path: 'knowledgebase/:kbId/test-tasks/:extractionId',
+              name: 'ExtensionTestTaskChecklist',
+              component: () => import('../views/TestTaskChecklistView.vue'),
+              meta: {
+                keepAlive: false,
+                requiresAuth: true,
+                requiresAdmin: true
+              }
+            },
+            {
               path: 'knowledgebase/:kbId/evaluation/:datasetId',
               name: 'ExtensionEvaluationBenchmarkDetail',
               component: () => import('../views/EvaluationBenchmarkDetailView.vue'),

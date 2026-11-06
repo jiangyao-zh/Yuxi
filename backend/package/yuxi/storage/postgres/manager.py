@@ -24,7 +24,7 @@ from yuxi.utils.singleton import SingletonMeta
 
 AGENT_RUN_TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in AGENT_RUN_TERMINAL_STATUSES)
 BUSINESS_SCHEMA_VERSION = 7
-KNOWLEDGE_SCHEMA_VERSION = 2
+KNOWLEDGE_SCHEMA_VERSION = 3
 SCHEMA_VERSION_TABLE = "yuxi_schema_migrations"
 AGENT_RUN_LEASE_SCHEMA_STATEMENTS = (
     "ALTER TABLE IF EXISTS agent_runs ADD COLUMN IF NOT EXISTS worker_id VARCHAR(128)",
@@ -252,6 +252,34 @@ KNOWLEDGE_FILE_TASK_OWNER_SCHEMA_STATEMENTS = (
     WHERE status IN ('parsing', 'indexing')
       AND processing_task_id IS NULL
     """,
+)
+TEST_TASK_EXTRACTION_SCHEMA_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS test_task_extractions (
+        id SERIAL PRIMARY KEY,
+        extraction_id VARCHAR(64) NOT NULL UNIQUE,
+        kb_id VARCHAR(80) NOT NULL REFERENCES knowledge_bases(kb_id) ON DELETE CASCADE,
+        status VARCHAR(32) NOT NULL DEFAULT 'queued',
+        source_files JSONB NOT NULL DEFAULT '[]'::jsonb,
+        model_spec VARCHAR(512) NOT NULL,
+        durable_task_id VARCHAR(64),
+        error_message TEXT,
+        checklist JSONB NOT NULL DEFAULT '[]'::jsonb,
+        confirmed_fields JSONB,
+        created_by VARCHAR(64),
+        confirmed_by VARCHAR(64),
+        confirmed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        CONSTRAINT ck_test_task_extractions_status CHECK (
+            status IN ('queued', 'running', 'ready', 'confirmed', 'failed')
+        )
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_test_task_extractions_extraction_id ON test_task_extractions(extraction_id)",
+    "CREATE INDEX IF NOT EXISTS ix_test_task_extractions_kb_id ON test_task_extractions(kb_id)",
+    "CREATE INDEX IF NOT EXISTS ix_test_task_extractions_status ON test_task_extractions(status)",
+    "CREATE INDEX IF NOT EXISTS ix_test_task_extractions_durable_task_id ON test_task_extractions(durable_task_id)",
 )
 TASK_DURABLE_SCHEMA_STATEMENTS = (
     "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS handler_version INTEGER",
@@ -532,6 +560,13 @@ class PostgresManager(metaclass=SingletonMeta):
         self._check_initialized()
         async with self.async_engine.begin() as conn:
             for statement in KNOWLEDGE_FILE_TASK_OWNER_SCHEMA_STATEMENTS:
+                await conn.execute(text(statement))
+
+    async def upgrade_knowledge_schema_v2_to_v3(self) -> None:
+        """创建试验任务抽取与确认清单表。"""
+        self._check_initialized()
+        async with self.async_engine.begin() as conn:
+            for statement in TEST_TASK_EXTRACTION_SCHEMA_STATEMENTS:
                 await conn.execute(text(statement))
 
     async def drop_tables(self):
@@ -910,6 +945,7 @@ class PostgresManager(metaclass=SingletonMeta):
                 "CREATE INDEX IF NOT EXISTS ix_knowledge_graph_triple_mentions_chunk_id "
                 "ON knowledge_graph_triple_mentions(chunk_id)"
             ),
+            *TEST_TASK_EXTRACTION_SCHEMA_STATEMENTS,
         ]
 
         async with self.async_engine.begin() as conn:
